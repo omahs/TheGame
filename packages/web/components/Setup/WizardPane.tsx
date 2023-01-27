@@ -8,21 +8,18 @@ import {
   Spinner,
   StatusedSubmitButton,
   Text,
-  useToast,
   Wrap,
   WrapItem,
 } from '@metafam/ds';
-import type { HasuraProfileProps, Maybe, Optional } from '@metafam/utils';
 import { ConnectToProgress } from 'components/ConnectToProgress';
 import { FlexContainer } from 'components/Container';
 import { HeadComponent } from 'components/Seo';
+import { useProfileContext } from 'contexts/ProfileWizardContext';
 import { useSetupFlow } from 'contexts/SetupContext';
-import { CeramicError } from 'lib/errors';
 import { useWeb3 } from 'lib/hooks';
 import type { ReactNode } from 'react';
-import React, { ReactElement, useCallback, useEffect, useState } from 'react';
-import { Control, useForm, UseFormRegisterReturn } from 'react-hook-form';
-import { errorHandler } from 'utils/errorHandler';
+import React, { ReactElement } from 'react';
+import { useFormContext } from 'react-hook-form';
 
 export type MaybeModalProps = {
   buttonLabel?: string | ReactElement;
@@ -30,117 +27,48 @@ export type MaybeModalProps = {
   title?: string | ReactElement;
 };
 
-export type WizardPaneProps<T = string> = {
-  field: keyof HasuraProfileProps | 'roles' | 'skills';
+export type WizardPaneProps = {
   title?: string | ReactElement;
   prompt?: string | ReactElement;
   buttonLabel?: string | ReactElement;
   onClose?: () => void;
-  children: ReactNode | ((props: WizardPaneCallbackProps<T>) => ReactNode);
+  children: ReactNode;
 };
 
-export type WizardPaneCallbackProps<T = string> = {
-  register: (
-    field: string,
-    opts: Record<string, unknown>,
-  ) => UseFormRegisterReturn;
-  control: Control;
-  loading: boolean;
-  errored: boolean;
-  dirty: boolean;
-  current: T;
-  setter: (arg: T | ((prev: Optional<Maybe<T>>) => Maybe<T>)) => void;
+export type WizardPaneOnSaveProps = {
+  query: string;
+  values: Record<string, unknown>;
+  setStatus: (msg: string) => void;
 };
 
-export type PaneProps<T = string> = WizardPaneProps<T> & {
-  value: Optional<Maybe<T>>;
+export type PaneProps = WizardPaneProps & {
   fetching?: boolean;
   authenticating?: boolean;
   onSave?: ({
+    query,
     values,
     setStatus,
-  }: {
-    values: Record<string, unknown>;
-    setStatus: (msg: string) => void;
-  }) => Promise<void>;
-  children: ReactNode | ((props: WizardPaneCallbackProps<T>) => ReactNode);
+  }: WizardPaneOnSaveProps) => Promise<void>;
+  children: ReactNode;
 };
 
-export const WizardPane = <T,>({
-  field,
+export const WizardPane = ({
   title,
   prompt,
   buttonLabel,
   onClose,
-  onSave,
-  value: existing,
   fetching = false,
   children,
-}: PaneProps<T>) => {
-  const { onNextPress, nextButtonLabel } = useSetupFlow();
-  const [status, setStatus] = useState<Maybe<string | ReactElement>>();
-  const {
-    register,
-    control,
-    handleSubmit,
-    setValue,
-    watch,
-    formState: { errors, isValidating: validating, dirtyFields },
-    // This is set to any because HasuraProfileProps wasn't working
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } = useForm<any>();
-  const current = watch(field, existing);
-  const dirty = current !== existing || dirtyFields[field];
+}: PaneProps) => {
+  const { nextButtonLabel } = useSetupFlow();
   const { connecting, connected, chainId } = useWeb3();
-  const toast = useToast();
+  const {
+    handleSubmit,
+    formState: { errors, isValidating: validating },
+  } = useFormContext();
+  const { errored, field, onSubmit, status } = useProfileContext();
 
-  useEffect(() => {
-    setValue(field, existing);
-  }, [existing, field, setValue]);
-
-  const onSubmit = useCallback(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    async (values: any) => {
-      try {
-        if (!dirty) {
-          setStatus('No Change. Skipping Save…');
-          await new Promise((resolve) => {
-            setTimeout(resolve, 10);
-          });
-        } else if (onSave) {
-          setStatus('Saving…');
-          await onSave({ values, setStatus });
-        }
-
-        (onClose ?? onNextPress).call(this);
-      } catch (err) {
-        const heading = err instanceof CeramicError ? 'Ceramic Error' : 'Error';
-        toast({
-          title: heading,
-          description: (err as Error).message,
-          status: 'error',
-          isClosable: true,
-          duration: 12000,
-        });
-        errorHandler(err as Error);
-        setStatus(null);
-      }
-    },
-    [dirty, onClose, onNextPress, onSave, toast],
-  );
-
-  const setter = useCallback(
-    (val: unknown) => {
-      let next = val;
-      if (val instanceof Function) {
-        next = val(current);
-      }
-      setValue(field, next);
-    },
-    [current, field, setValue],
-  );
-
-  if ((!connecting && !connected) || chainId !== '0x1') {
+  if ((!connecting && !connected) || (chainId != null && chainId !== '0x1')) {
     return (
       <FlexContainer>
         <MetaHeading color="white">Wrong Chain</MetaHeading>
@@ -170,10 +98,7 @@ export const WizardPane = <T,>({
           )}
         </Box>
       )}
-      <FormControl
-        isInvalid={!!errors[field]}
-        isDisabled={!connected || fetching}
-      >
+      <FormControl isInvalid={errored} isDisabled={!connected || fetching}>
         {(!connected || fetching || validating) && (
           <Flex justify="center" align="center" my={8}>
             <Spinner thickness="4px" speed="1.25s" size="lg" mr={4} />
@@ -187,20 +112,12 @@ export const WizardPane = <T,>({
           </Flex>
         )}
         <Box my={5}>
-          {typeof children === 'function'
-            ? children.call(null, {
-                register,
-                control,
-                loading: !connected || fetching,
-                errored: !!errors[field],
-                dirty,
-                current,
-                setter,
-              })
-            : children}
-          <FormErrorMessage style={{ justifyContent: 'center' }}>
-            {errors[field]?.message?.toString()}
-          </FormErrorMessage>
+          <>
+            {children}
+            <FormErrorMessage style={{ justifyContent: 'center' }}>
+              {errors[field]?.message?.toString()}
+            </FormErrorMessage>
+          </>
         </Box>
       </FormControl>
 

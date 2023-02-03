@@ -54,7 +54,16 @@ export const PlayerMutations = /* GraphQL */ `
     $seasonXP: numeric
     $discordId: String
   ) {
-    update_player(
+    clearDiscord: update_player(
+      where: {
+        discordId: { _eq: $discordId }
+        ethereumAddress: { _neq: $ethAddress }
+      }
+      _set: { discordId: null }
+    ) {
+      affected_rows
+    }
+    setStats: update_player(
       where: { ethereumAddress: { _eq: $ethAddress } }
       _set: {
         ethereumAddress: $ethAddress

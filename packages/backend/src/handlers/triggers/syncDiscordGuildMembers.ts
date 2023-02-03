@@ -37,37 +37,48 @@ export const syncAllGuildDiscordMembers = async (
       status: GuildStatus_Enum.Active,
     });
 
-    await Promise.all(
+    const responses = await Promise.allSettled(
       guilds
-        .filter((guild) => guild.membershipThroughDiscord === true)
-        .map((guild) => syncGuildMembers(guild)),
+        .filter((guild) => guild.membershipThroughDiscord)
+        .map((guild) =>
+          syncGuildMembers(guild).catch((e) => {
+            throw new Error(`${guild.name}: ${e.message}`);
+          }),
+        ),
     );
 
+    const errors = responses.filter((r) => r.status === 'rejected');
+    if (errors.length > 0) {
+      throw new Error(
+        // eslint-disable-next-line prefer-template
+        `Failed to sync ${errors.length} guilds:\n` +
+          errors.map((e) => (e as PromiseRejectedResult).reason).join('\n'),
+      );
+    }
     res.sendStatus(200);
   } catch (e) {
-    const msg = (e as Error).message;
-    console.warn('Error syncing guild memberships from discord', msg);
-    console.error(e);
+    const msg = (e as Error).message ?? e;
+    const out = `Error syncing Discord guild memberships: ${msg}`;
+    console.error(out);
 
-    res.sendStatus(500);
+    res.status(500).send(out);
   }
 };
 
 const syncGuildMembers = async (guild: GuildFragment) => {
-  if (guild?.discordId == null) return;
+  if (!guild.membershipThroughDiscord) return;
+  if (guild?.discordId == null) {
+    throw new Error(`Guild ${guild.name} has no discordId.`);
+  }
 
   const getMetadataResponse = await client.GetGuildMetadataById({
     id: guild.id,
   });
-  const guildMetadata = getMetadataResponse.guild_metadata[0];
-  if (
-    guildMetadata == null ||
-    guildMetadata.discordMetadata == null ||
-    guild.membershipThroughDiscord === false
-  )
-    return;
+  const [guildMetadata] = getMetadataResponse.guild_metadata || [];
+  if (guildMetadata == null || guildMetadata.discordMetadata == null) {
+    throw new Error(`Guild ${guild.name} has no metadata.`);
+  }
 
-  // at least one membership role must be defined
   const discordServerMembershipRoles = (
     guildMetadata.discordMetadata as GuildDiscordMetadata
   ).membershipRoleIds;
@@ -75,17 +86,17 @@ const syncGuildMembers = async (guild: GuildFragment) => {
     discordServerMembershipRoles == null ||
     discordServerMembershipRoles?.length === 0
   ) {
-    return;
+    throw new Error(`Guild ${guild.name} has no membership roles.`);
   }
 
-  // only sync on ACTIVE guilds. For all others, remove all guild_players
+  // only sync on ACTIVE guilds. For all others, remove all members
   if (guild.status !== GuildStatus_Enum.Active) {
     const removeResponse = await client.RemoveAllGuildMembers({
       guildId: guild.id,
     });
     const numDeleted = removeResponse.delete_guild_player?.affected_rows;
     if (numDeleted != null && numDeleted > 0) {
-      console.log(`Removed ${numDeleted} players from ${guild.status} guild`);
+      console.log(`Removed ${numDeleted} players from ${guild.status} guild.`);
     }
     return;
   }
@@ -93,8 +104,9 @@ const syncGuildMembers = async (guild: GuildFragment) => {
   const discordClient = await createDiscordClient();
   const discordGuild = await discordClient.guilds.fetch(guild.discordId);
 
-  if (discordGuild == null)
+  if (discordGuild == null) {
     throw new Error(`Discord server ${guild.discordId} does not exist!`);
+  }
 
   const getGuildMembersResponse = await client.GetGuildMembers({
     id: guild.id,
@@ -105,8 +117,6 @@ const syncGuildMembers = async (guild: GuildFragment) => {
 
   await discordGuild.members.fetch();
 
-  // gather all discord server members who have at least one of the "membership" roles
-  // as defined by this guild
   const discordGuildMembers = discordGuild.members.cache.filter(
     (discordMember) =>
       discordMember.roles.cache.some((role) =>
@@ -114,17 +124,15 @@ const syncGuildMembers = async (guild: GuildFragment) => {
       ),
   );
 
-  // gather discord server members who are not already members of this guild
   const discordServerMemberIds: string[] = [];
   const playerDiscordIdsToAdd: string[] = [];
-  discordGuildMembers.forEach((discordMember) => {
-    discordServerMemberIds.push(discordMember.user.id);
-    if (!guildMemberDiscordIds.includes(discordMember.user.id)) {
-      playerDiscordIdsToAdd.push(discordMember.user.id);
+  discordGuildMembers.forEach(({ user: { id } }) => {
+    discordServerMemberIds.push(id);
+    if (!guildMemberDiscordIds.includes(id)) {
+      playerDiscordIdsToAdd.push(id);
     }
   });
 
-  // gather current members of this guild who are not in the list of discord server members
   const playersToRemove = guildMemberDiscordIds.filter(
     (discordId) => !discordServerMemberIds.includes(discordId),
   );
@@ -139,28 +147,33 @@ const syncGuildMembers = async (guild: GuildFragment) => {
       playerId: player.id,
     }));
 
-  const syncResponse: SyncGuildMembersMutation = await client.SyncGuildMembers({
-    memberDiscordIdsToRemove: playersToRemove,
-    membersToAdd: playersToAdd,
-  });
+  if (playersToAdd.length === 0 && playersToRemove.length === 0) {
+    console.info(`No changes for guild: ${guild.name}.`);
+  } else {
+    const syncResponse: SyncGuildMembersMutation =
+      await client.SyncGuildMembers({
+        memberDiscordIdsToRemove: playersToRemove,
+        membersToAdd: playersToAdd,
+      });
 
-  const numDeleted = syncResponse.delete_guild_player?.affected_rows;
-  const numInserted = syncResponse.insert_guild_player?.affected_rows;
+    const numDeleted = syncResponse.delete_guild_player?.affected_rows;
+    const numInserted = syncResponse.insert_guild_player?.affected_rows;
 
-  let logStr = '';
+    let logStr = '';
 
-  if (numInserted != null && numInserted > 0) {
-    logStr = `Added ${numInserted} players`;
-  }
-  if (numDeleted != null && numDeleted > 0) {
-    logStr += `${
-      logStr.length > 0 ? ' and removed' : 'Removed'
-    } ${numDeleted} players`;
-  }
+    if (numInserted != null && numInserted > 0) {
+      logStr = `Added ${numInserted} players`;
+    }
+    if (numDeleted != null && numDeleted > 0) {
+      logStr += `${
+        logStr.length > 0 ? ' and removed' : 'Removed'
+      } ${numDeleted} players`;
+    }
 
-  if (logStr.length > 0) {
-    console.log(
-      `Updated guild members for ${guild?.name} from Discord. ${logStr}`,
-    );
+    if (logStr.length > 0) {
+      console.log(
+        `Updated guild members for ${guild?.name} from Discord. ${logStr}`,
+      );
+    }
   }
 };

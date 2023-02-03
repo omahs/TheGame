@@ -3,8 +3,8 @@ import {
   fetch,
   getLatestEthAddress,
   getNumWeeksInSeason,
+  isDefined,
   isNewSeason,
-  isNotNullOrUndefined,
 } from '@metafam/utils';
 import bluebird from 'bluebird';
 import { Request, Response } from 'express';
@@ -61,7 +61,7 @@ export const migrateSourceCredAccounts = async (
   }
 
   const force = req.query.force != null;
-  console.debug(`Updating players from sourcecred. Force-insert? ${force}`);
+  console.debug(`Updating players from SourceCred. Force-insert? ${force}`);
 
   const accountsResult = await fetch(Constants.SC_ACCOUNTS_FILE);
   const accountsData = (await accountsResult.json()) as SCAccountsData;
@@ -82,8 +82,8 @@ export const migrateSourceCredAccounts = async (
     .sort((a, b) => b.totalCred - a.totalCred)
     .map((a, index) => {
       const linkedAccounts = a.account.identity.aliases
-        .map((alias) => parseAlias(alias))
-        .filter(isNotNullOrUndefined);
+        .map(parseAlias)
+        .filter(isDefined);
 
       const discordId = linkedAccounts.find(
         ({ type }) => type === 'DISCORD',
@@ -98,6 +98,7 @@ export const migrateSourceCredAccounts = async (
       const seasonXP = userWeeklyCred
         .slice(-numWeeksInSeason)
         .reduce((t, c) => t + c, 0);
+
       return {
         ethereumAddress: ethAddress.toLowerCase(),
         totalXP: a.totalCred,
@@ -113,7 +114,7 @@ export const migrateSourceCredAccounts = async (
         },
       };
     })
-    .filter(isNotNullOrUndefined);
+    .filter(isDefined);
 
   try {
     const result = await bluebird.map(
@@ -128,10 +129,15 @@ export const migrateSourceCredAccounts = async (
         };
 
         try {
-          const { update_player: update } = await client.UpdatePlayer(vars);
+          const { clearDiscord, setStats } = await client.UpdatePlayer(vars);
 
-          let playerId: string = update?.returning[0]?.id;
-          let { affected_rows: affected } = update ?? {};
+          const cleared = clearDiscord?.affected_rows;
+          if (cleared && cleared > 0) {
+            console.debug(`Cleared Discord ID for ${player.ethereumAddress}`);
+          }
+
+          let playerId: string = setStats?.returning[0]?.id;
+          let { affected_rows: affected } = setStats ?? {};
 
           if ((affected ?? 0) > 1) {
             throw new Error(
@@ -185,7 +191,7 @@ export const migrateSourceCredAccounts = async (
       },
       { concurrency: 10 },
     );
-    const usersSkipped = result.filter(isNotNullOrUndefined);
+    const usersSkipped = result.filter(isDefined);
 
     res.json({
       numSkipped: usersSkipped.length,
@@ -193,8 +199,9 @@ export const migrateSourceCredAccounts = async (
         accountList.length - usersSkipped.length,
     });
   } catch (e) {
-    const msg = (e as Error).message;
-    console.warn('Error migrating players/accounts', msg);
-    res.sendStatus(500);
+    const msg = (e as Error).message ?? e;
+    const out = `Error migrating SourceCred accounts: ${msg}`;
+    console.warn(out);
+    res.status(500).send(out);
   }
 };

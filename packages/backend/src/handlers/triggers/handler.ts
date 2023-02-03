@@ -29,12 +29,13 @@ export const triggerHandler = async (
   }
 
   const { limiter } = req.app.locals;
-  const trigger = TRIGGERS[req.body.trigger.name as keyof typeof TRIGGERS];
+  const triggerName = req.body.trigger.name as keyof typeof TRIGGERS;
+  const trigger = TRIGGERS[triggerName];
 
   if (trigger) {
     await trigger(req.body, limiter);
     res.sendStatus(200);
   } else {
-    res.sendStatus(404);
+    res.status(404).send(`Trigger ${triggerName} not found.`);
   }
 };

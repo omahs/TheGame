@@ -48,7 +48,7 @@ export const PlayerMutations = /* GraphQL */ `
   }
 
   mutation UpdatePlayer(
-    $ethAddress: String
+    $ethAddress: String!
     $rank: PlayerRank_enum
     $totalXP: numeric
     $seasonXP: numeric
@@ -56,17 +56,19 @@ export const PlayerMutations = /* GraphQL */ `
   ) {
     clearDiscord: update_player(
       where: {
-        discordId: { _eq: $discordId }
-        ethereumAddress: { _neq: $ethAddress }
+        _and: [
+          { discordId: { _eq: $discordId } }
+          { discordId: { _is_null: false } }
+          { ethereumAddress: { _nilike: $ethAddress } }
+        ]
       }
-      _set: { discordId: null }
+      _set: { discordId: null, totalXP: 0, seasonXP: 0, rank: null }
     ) {
       affected_rows
     }
     setStats: update_player(
-      where: { ethereumAddress: { _eq: $ethAddress } }
+      where: { ethereumAddress: { _ilike: $ethAddress } }
       _set: {
-        ethereumAddress: $ethAddress
         rank: $rank
         totalXP: $totalXP
         seasonXP: $seasonXP

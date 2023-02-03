@@ -112,8 +112,8 @@ const syncGuildMembers = async (guild: GuildFragment) => {
     id: guild.id,
   });
   const guildMemberDiscordIds = getGuildMembersResponse.guild[0].guild_players
-    .filter((p) => p.Player.discordId != null)
-    .map((p) => p.Player.discordId) as string[];
+    .map((p) => p.Player.discordId)
+    .filter((id) => !!id) as Array<string>;
 
   await discordGuild.members.fetch();
 
@@ -124,8 +124,8 @@ const syncGuildMembers = async (guild: GuildFragment) => {
       ),
   );
 
-  const discordServerMemberIds: string[] = [];
-  const playerDiscordIdsToAdd: string[] = [];
+  const discordServerMemberIds: Array<string> = [];
+  const playerDiscordIdsToAdd: Array<string> = [];
   discordGuildMembers.forEach(({ user: { id } }) => {
     discordServerMemberIds.push(id);
     if (!guildMemberDiscordIds.includes(id)) {

@@ -35,12 +35,9 @@ const parseAlias = (alias: SCAlias) => {
       return null;
     }
 
-    const identifier = addressParts[addressParts.length - 1];
+    const [identifier] = addressParts.slice(-1);
 
-    return {
-      type,
-      identifier,
-    };
+    return { type, identifier };
   } catch (e) {
     // eslint-disable-next-line no-console
     console.error('Unable to parse alias:', {
@@ -56,6 +53,7 @@ export const migrateSourceCredAccounts = async (
   res: Response,
 ): Promise<void> => {
   const { error: loadError } = await ledgerManager.reloadLedger();
+
   if (loadError) {
     throw new Error(`Unable to load ledger: ${loadError}`);
   }
@@ -77,7 +75,7 @@ export const migrateSourceCredAccounts = async (
     await client.ResetAllPlayersSeasonXp();
   }
 
-  const accountList = accountsData.accounts
+  const rawAccountList = accountsData.accounts
     .filter((a) => a.account.identity.subtype === 'USER')
     .sort((a, b) => b.totalCred - a.totalCred)
     .map((a, index) => {
@@ -105,7 +103,7 @@ export const migrateSourceCredAccounts = async (
         seasonXP,
         rank,
         discordId,
-        Accounts: {
+        accounts: {
           // Omit the discord account, as that is updated directly on the player table
           data: linkedAccounts.filter(
             ({ type }) => type !== AccountType_Enum.Discord,
@@ -113,11 +111,19 @@ export const migrateSourceCredAccounts = async (
           on_conflict: accountOnConflict,
         },
       };
-    })
-    .filter(isDefined);
+    });
+
+  const accountsFound = rawAccountList.length;
+  const accountList = rawAccountList.filter(isDefined);
+  const numUnclaimed = accountsFound - accountList.length;
+
+  let numSkipped = 0;
+  let numUpdated = 0;
+  let numInserted = 0;
+  let numCleared = 0;
 
   try {
-    const result = await bluebird.map(
+    await bluebird.map(
       accountList,
       async (player) => {
         const vars = {
@@ -133,19 +139,18 @@ export const migrateSourceCredAccounts = async (
 
           const cleared = clearDiscord?.affected_rows;
           if (cleared && cleared > 0) {
+            numCleared += cleared;
             console.debug(`Cleared Discord ID for ${player.ethereumAddress}`);
           }
 
           let playerId: string = setStats?.returning[0]?.id;
-          let { affected_rows: affected } = setStats ?? {};
+          const { affected_rows: updated } = setStats ?? {};
 
-          if ((affected ?? 0) > 1) {
-            throw new Error(
-              `Multiple players (${affected}) updated incorrectly: ${player.ethereumAddress}`,
-            );
-          } else if (affected === 0) {
+          if (!updated || updated === 0) {
             if (!force) {
-              return player;
+              throw new Error(
+                `Skipping nonexistent player: ${player.ethereumAddress}.`,
+              );
             }
 
             // 'force' indicates we should insert new players
@@ -160,14 +165,20 @@ export const migrateSourceCredAccounts = async (
                 },
               ],
             });
-            affected = insert?.affected_rows;
+            numInserted += insert?.affected_rows ?? 0;
             playerId = insert?.returning[0]?.id;
+          } else if (updated > 1) {
+            throw new Error(
+              `Error: Multiple players (${updated}) updated: ${player.ethereumAddress}`,
+            );
+          } else {
+            numUpdated += updated;
           }
 
           if (playerId) {
             try {
               await client.UpsertAccount({
-                objects: player.Accounts.data.map((account) => ({
+                objects: player.accounts.data.map((account) => ({
                   playerId,
                   type: account.type,
                   identifier: account.identifier,
@@ -179,24 +190,26 @@ export const migrateSourceCredAccounts = async (
                 'Error updating accounts for Player',
                 playerId,
                 accErr,
-                player.Accounts,
+                player.accounts,
               );
             }
           }
         } catch (e) {
-          console.warn('ERR! failed to update player', e);
-          return player;
+          console.warn(
+            `Error: Failed to update player: "${(e as Error).message}"`,
+          );
+          numSkipped += 1;
         }
-        return undefined;
       },
       { concurrency: 10 },
     );
-    const usersSkipped = result.filter(isDefined);
 
     res.json({
-      numSkipped: usersSkipped.length,
-      [force ? 'numInserted' : 'numUpdated']:
-        accountList.length - usersSkipped.length,
+      numSkipped,
+      numUpdated,
+      numInserted,
+      numCleared,
+      numUnclaimed,
     });
   } catch (e) {
     const msg = (e as Error).message ?? e;

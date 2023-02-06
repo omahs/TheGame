@@ -12,7 +12,7 @@ const SOURCE_GRAPHQL_URL = (
 );
 const ACCOUNT_MIGRATION_URL = (
   process.env.ACCOUNT_MIGRATION_URL
-  || 'http://localhost:4000/actions/migrateSourceCredAccounts?force=true'
+  || 'http://localhost:4000/actions/syncSourceCredAccounts?force=true'
 );
 const HASURA_GRAPHQL_ADMIN_SECRET = (
   process.env.HASURA_GRAPHQL_ADMIN_SECRET || 'metagame_secret'
@@ -227,7 +227,7 @@ function getSkillId(skills, { Skill: { category, name } }) {
   return skillsMap[skillMapId];
 }
 
-async function forceMigrateAccounts() {
+async function forceSyncAccounts() {
   const result = await fetch(ACCOUNT_MIGRATION_URL, {
     method: 'POST',
   });
@@ -244,7 +244,7 @@ async function forceMigrateAccounts() {
 
 async function startSeeding() {
   console.debug(`Force migrating sourcecred users with: ${ACCOUNT_MIGRATION_URL}`);
-  const result = await forceMigrateAccounts();
+  const result = await forceSyncAccounts();
   console.debug(result);
   console.debug(`Fetching players from: ${PRODUCTION_GRAPHQL_URL}`);
   const players = await fetchTopPlayers();

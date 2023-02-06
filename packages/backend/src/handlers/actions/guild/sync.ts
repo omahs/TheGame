@@ -85,9 +85,8 @@ const syncGuildMembers = async (guild: GuildFragment) => {
     throw new Error(`Guild ${guild.name} has no metadata.`);
   }
 
-  const discordServerMembershipRoles = (
-    guildMetadata.discordMetadata as GuildDiscordMetadata
-  ).membershipRoleIds;
+  const { membershipRoleIds: discordServerMembershipRoles } =
+    guildMetadata.discordMetadata as GuildDiscordMetadata;
   if (
     discordServerMembershipRoles == null ||
     discordServerMembershipRoles?.length === 0
@@ -95,16 +94,16 @@ const syncGuildMembers = async (guild: GuildFragment) => {
     throw new Error(`Guild ${guild.name} has no membership roles.`);
   }
 
-  let numDeleted = null;
-  let numInserted = null;
+  let numDeleted = 0;
+  let numInserted = 0;
+  let numSkipped = 0;
 
   // only sync on ACTIVE guilds. For all others, remove all members
   if (guild.status !== GuildStatus_Enum.Active) {
     const removeResponse = await client.RemoveAllGuildMembers({
       guildId: guild.id,
     });
-    numInserted = 0;
-    numDeleted = removeResponse.delete_guild_player?.affected_rows;
+    numDeleted = removeResponse.delete_guild_player?.affected_rows ?? 0;
     if (numDeleted != null && numDeleted > 0) {
       console.log(`Removed ${numDeleted} players from ${guild.status} guild.`);
     }
@@ -119,9 +118,15 @@ const syncGuildMembers = async (guild: GuildFragment) => {
     const getGuildMembersResponse = await client.GetGuildMembers({
       id: guild.id,
     });
-    const guildMemberDiscordIds = getGuildMembersResponse.guild[0].guild_players
-      .map((p) => p.Player.discordId)
-      .filter((id) => !!id) as Array<string>;
+    const maybeGuildMemberDiscordIds =
+      getGuildMembersResponse.guild[0].guild_players.map(
+        (p) => p.Player.discordId,
+      );
+    const guildMemberDiscordIds = maybeGuildMemberDiscordIds.filter(
+      (id) => !!id,
+    ) as Array<string>;
+    numSkipped +=
+      maybeGuildMemberDiscordIds.length - guildMemberDiscordIds.length;
 
     await discordGuild.members.fetch();
 
@@ -140,6 +145,8 @@ const syncGuildMembers = async (guild: GuildFragment) => {
         playerDiscordIdsToAdd.push(id);
       }
     });
+
+    numSkipped += discordServerMemberIds.length - playerDiscordIdsToAdd.length;
 
     const playersToRemove = guildMemberDiscordIds.filter(
       (discordId) => !discordServerMemberIds.includes(discordId),
@@ -164,8 +171,8 @@ const syncGuildMembers = async (guild: GuildFragment) => {
           membersToAdd: playersToAdd,
         });
 
-      numDeleted = syncResponse.delete_guild_player?.affected_rows;
-      numInserted = syncResponse.insert_guild_player?.affected_rows;
+      numDeleted = syncResponse.delete_guild_player?.affected_rows ?? 0;
+      numInserted = syncResponse.insert_guild_player?.affected_rows ?? 0;
 
       let logStr = '';
 
@@ -191,5 +198,6 @@ const syncGuildMembers = async (guild: GuildFragment) => {
     username: guild.guildname,
     numInserted,
     numDeleted,
+    numSkipped,
   };
 };

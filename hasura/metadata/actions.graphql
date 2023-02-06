@@ -203,5 +203,6 @@ type DiscordGuildsSyncOutput {
   username : String!
   numInserted : Int
   numDeleted : Int
+  numSkipped : Int
 }
 

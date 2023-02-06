@@ -48,7 +48,7 @@ const parseAlias = (alias: SCAlias) => {
   }
 };
 
-export const migrateSourceCredAccounts = async (
+export const syncSourceCredAccounts = async (
   req: Request,
   res: Response,
 ): Promise<void> => {
@@ -140,7 +140,9 @@ export const migrateSourceCredAccounts = async (
           const cleared = clearDiscord?.affected_rows;
           if (cleared && cleared > 0) {
             numCleared += cleared;
-            console.debug(`Cleared Discord ID for ${player.ethereumAddress}`);
+            console.debug(
+              `Cleared (${cleared}) Discord ID for ${player.ethereumAddress}.`,
+            );
           }
 
           let playerId: string = setStats?.returning[0]?.id;

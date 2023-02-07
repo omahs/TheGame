@@ -70,10 +70,9 @@ export const syncSourceCredAccounts = async (
 
   const numWeeksInSeason = getNumWeeksInSeason();
 
-  // Explicitly reset everybody's seasonal XP at the beginning of a season
-  if (isNewSeason()) {
-    await client.ResetAllPlayersSeasonXp();
-  }
+  // The easiest way to handle new seasons & replacement eth
+  // addresses is to reset all stats & overwrite them.
+  await client.ResetAllPlayersXP();
 
   const rawAccountList = accountsData.accounts
     .filter((a) => a.account.identity.subtype === 'USER')
@@ -120,14 +119,13 @@ export const syncSourceCredAccounts = async (
   let numSkipped = 0;
   let numUpdated = 0;
   let numInserted = 0;
-  let numCleared = 0;
 
   try {
     await bluebird.map(
       accountList,
       async (player) => {
         const vars = {
-          ethAddress: player.ethereumAddress,
+          ethereumAddress: player.ethereumAddress,
           rank: player.rank,
           totalXP: player.totalXP,
           seasonXP: player.seasonXP,
@@ -135,18 +133,10 @@ export const syncSourceCredAccounts = async (
         };
 
         try {
-          const { clearDiscord, setStats } = await client.UpdatePlayer(vars);
+          const { update_player: update } = await client.UpdatePlayer(vars);
 
-          const cleared = clearDiscord?.affected_rows;
-          if (cleared && cleared > 0) {
-            numCleared += cleared;
-            console.debug(
-              `Cleared (${cleared}) Discord ID for ${player.ethereumAddress}.`,
-            );
-          }
-
-          let playerId: string = setStats?.returning[0]?.id;
-          const { affected_rows: updated } = setStats ?? {};
+          let playerId: string = update?.returning[0]?.id;
+          const { affected_rows: updated } = update ?? {};
 
           if (!updated || updated === 0) {
             if (!force) {
@@ -158,14 +148,7 @@ export const syncSourceCredAccounts = async (
             // 'force' indicates we should insert new players
             // if they don't already exist.
             const { insert_player: insert } = await client.InsertPlayers({
-              objects: [
-                {
-                  ethereumAddress: player.ethereumAddress,
-                  rank: player.rank,
-                  totalXP: player.totalXP,
-                  seasonXP: player.seasonXP,
-                },
-              ],
+              objects: [vars],
             });
             numInserted += insert?.affected_rows ?? 0;
             playerId = insert?.returning[0]?.id;
@@ -210,7 +193,6 @@ export const syncSourceCredAccounts = async (
       numSkipped,
       numUpdated,
       numInserted,
-      numCleared,
       numUnclaimed,
     });
   } catch (e) {

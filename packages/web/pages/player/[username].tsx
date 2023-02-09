@@ -9,16 +9,16 @@ import {
 import { HeadComponent } from 'components/Seo';
 import {
   Player,
-  useInsertCacheInvalidationMutation as useInvalidateCache,
   useUpdatePlayerProfileLayoutMutation as useUpdateLayout,
 } from 'graphql/autogen/types';
 import { getPlayer } from 'graphql/getPlayer';
 import { getTopPlayerUsernames } from 'graphql/getPlayers';
 import { useProfileField, useUser } from 'lib/hooks';
+import { useGetPlayerProfileFromComposeDB } from 'lib/hooks/ceramic/useGetPlayerProfileFromComposeDB';
 import { GetStaticPaths, GetStaticPropsContext } from 'next';
 import { useRouter } from 'next/router';
 import Page404 from 'pages/404';
-import React, { ReactElement, useCallback, useEffect, useMemo } from 'react';
+import React, { ReactElement, useCallback, useMemo } from 'react';
 import { LayoutData } from 'utils/boxTypes';
 import {
   getPlayerBackgroundFull,
@@ -35,6 +35,23 @@ type Props = {
 
 export const PlayerPage: React.FC<Props> = ({ player }): ReactElement => {
   const router = useRouter();
+
+  const { result: composeDBProfileData } = useGetPlayerProfileFromComposeDB();
+
+  if (composeDBProfileData != null) {
+    // eslint-disable-next-line no-param-reassign
+    player.profile = {
+      id: 'dummy',
+      player,
+      playerId: player.id,
+      ...composeDBProfileData,
+    };
+  }
+
+  // TODO create a button that migrates a user's data explicitly from
+  // hasura to composeDB. Also use this bannerImageURL for backgroundImageURL
+  // if it exists
+
   const { value: bannerURL } = useProfileField({
     field: 'bannerImageURL',
     player,
@@ -45,13 +62,6 @@ export const PlayerPage: React.FC<Props> = ({ player }): ReactElement => {
     player,
     getter: getPlayerBackgroundFull,
   });
-  const [, invalidateCache] = useInvalidateCache();
-
-  useEffect(() => {
-    if (player?.id) {
-      invalidateCache({ playerId: player.id });
-    }
-  }, [player?.id, invalidateCache]);
 
   if (router.isFallback) {
     return <LoadingState />;

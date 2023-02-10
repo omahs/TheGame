@@ -1,3 +1,23 @@
+export const PlayerProfileFragment = /* GraphQL */ `
+  fragment PlayerProfileFragment on profile {
+    availableHours
+    backgroundImageURL
+    bannerImageURL
+    colorMask
+    countryCode
+    description
+    emoji
+    explorerTypeTitle
+    location
+    name
+    profileImageURL
+    pronouns
+    timeZone
+    username
+    website
+  }
+`;
+
 export const PlayerFragment = /* GraphQL */ `
   fragment PlayerFragment on player {
     id
@@ -37,26 +57,7 @@ export const PlayerFragment = /* GraphQL */ `
     #   contextIds
     # }
   }
-`;
-
-export const PlayerProfileFragment = /* GraphQL */ `
-  fragment PlayerProfileFragment on profile {
-    availableHours
-    backgroundImageURL
-    bannerImageURL
-    colorMask
-    countryCode
-    description
-    emoji
-    explorerTypeTitle
-    location
-    name
-    profileImageURL
-    pronouns
-    timeZone
-    username
-    website
-  }
+  ${PlayerProfileFragment}
 `;
 
 export const GuildFragment = /* GraphQL */ `

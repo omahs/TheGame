@@ -20,11 +20,13 @@ import { optimizedImage } from 'utils/imageHelpers';
 import { Label } from './Label';
 
 export type EditBackgroundImageProps = {
-  initialURL: Maybe<string>;
+  initialURL?: Maybe<string>;
+  onFilePicked: (file: File) => void;
 };
 
 export const EditBackgroundImage: React.FC<EditBackgroundImageProps> = ({
   initialURL,
+  onFilePicked,
 }) => {
   const toast = useToast();
 
@@ -55,25 +57,34 @@ export const EditBackgroundImage: React.FC<EditBackgroundImageProps> = ({
         });
       } else {
         setLoading(true);
+        onFilePicked(file);
         const reader = new FileReader();
-        reader.addEventListener('load', () => {
-          setURL(reader.result as string);
-        });
-        reader.addEventListener('error', ({ target }) => {
-          const { error } = target ?? {};
-          toast({
-            title: 'Image Loading Error',
-            description: `Loading Images Error: “${error?.message}”`,
-            status: 'error',
-            isClosable: true,
-            duration: 10000,
-          });
-          setLoading(false);
-        });
+        reader.addEventListener(
+          'load',
+          () => {
+            setURL(reader.result as string);
+          },
+          { once: true },
+        );
+        reader.addEventListener(
+          'error',
+          ({ target }) => {
+            const { error } = target ?? {};
+            toast({
+              title: 'Image Loading Error',
+              description: `Loading Images Error: “${error?.message}”`,
+              status: 'error',
+              isClosable: true,
+              duration: 10000,
+            });
+            setLoading(false);
+          },
+          { once: true },
+        );
         reader.readAsDataURL(file);
       }
     },
-    [toast],
+    [onFilePicked, toast],
   );
 
   const onFileRemove = useCallback(() => {

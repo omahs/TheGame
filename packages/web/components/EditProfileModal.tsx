@@ -31,30 +31,17 @@ import {
   WrapItem,
 } from '@metafam/ds';
 import {
-  AllProfileFields,
-  HasuraProfileProps,
-  Images,
-  Optional,
-} from '@metafam/utils';
-import {
   Maybe,
   Player,
   useInsertCacheInvalidationMutation,
 } from 'graphql/autogen/types';
 import { getPlayer } from 'graphql/getPlayer';
-import { useProfileField, useWeb3 } from 'lib/hooks';
+import { useWeb3 } from 'lib/hooks';
 import { useSaveToComposeDB } from 'lib/hooks/ceramic/useSaveToComposeDB';
 import { useRouter } from 'next/router';
-import React, {
-  ReactElement,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from 'react';
+import React, { ReactElement, useCallback, useEffect, useState } from 'react';
 import { Controller, FormProvider, useForm } from 'react-hook-form';
 import { errorHandler } from 'utils/errorHandler';
-import { optimizedImage } from 'utils/imageHelpers';
 import { isEmpty } from 'utils/objectHelpers';
 
 import { ConnectToProgress } from './ConnectToProgress';
@@ -105,68 +92,74 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
   const {
     handleSubmit,
     register,
+    getValues,
     setValue,
     control,
+    reset,
     formState: { errors, dirtyFields },
   } = formMethods;
   const { address, chainId } = useWeb3();
   const toast = useToast();
 
-  const fields = Object.fromEntries(
-    Object.keys(AllProfileFields).map((key) => {
-      // eslint-disable-next-line react-hooks/rules-of-hooks
-      const { value } = useProfileField({
-        field: key,
-        player,
-      });
-      return [key, value];
-    }),
-  );
+  const [pickedFiles, setPickedFiles] = useState<Record<string, File>>({});
 
-  const endpoints = Object.fromEntries(
-    Object.keys(Images).map((hasuraId) => {
-      const key = hasuraId as keyof typeof Images;
-      // eslint-disable-next-line react-hooks/rules-of-hooks
-      const [active, setActive] = useState(false);
-      // eslint-disable-next-line react-hooks/rules-of-hooks
-      const [loading, setLoading] = useState(true);
-      // eslint-disable-next-line react-hooks/rules-of-hooks
-      const [url, setURL] = useState<Optional<string>>(
-        optimizedImage(key, fields[key]),
-      );
-      // eslint-disable-next-line react-hooks/rules-of-hooks
-      const [file, setFile] = useState<Maybe<File>>(null);
-      // eslint-disable-next-line react-hooks/rules-of-hooks
-      const ref = useRef<HTMLImageElement>(null);
-      // key ends in “URL”
-      return [
-        key,
-        {
-          loading,
-          active,
-          val: url,
-          file,
-          ref,
-          setLoading,
-          setActive,
-          setURL,
-          setFile,
-        },
-      ];
-    }),
-  );
+  // const fields = Object.fromEntries(
+  //   Object.keys(AllProfileFields).map((key) => {
+  //     // eslint-disable-next-line react-hooks/rules-of-hooks
+  //     const { value } = useProfileField({
+  //       field: key,
+  //       player,
+  //     });
+  //     return [key, value];
+  //   }),
+  // );
 
-  if (debug) {
-    console.debug({ fields, endpoints, dirtyFields });
-  }
+  // const endpoints = Object.fromEntries(
+  //   Object.keys(Images).map((hasuraId) => {
+  //     const key = hasuraId as keyof typeof Images;
+  //     // eslint-disable-next-line react-hooks/rules-of-hooks
+  //     const [active, setActive] = useState(false);
+  //     // eslint-disable-next-line react-hooks/rules-of-hooks
+  //     const [loading, setLoading] = useState(true);
+  //     // eslint-disable-next-line react-hooks/rules-of-hooks
+  //     const [url, setURL] = useState<Optional<string>>(
+  //       optimizedImage(key, fields[key]),
+  //     );
+  //     // eslint-disable-next-line react-hooks/rules-of-hooks
+  //     const [file, setFile] = useState<Maybe<File>>(null);
+  //     // eslint-disable-next-line react-hooks/rules-of-hooks
+  //     const ref = useRef<HTMLImageElement>(null);
+  //     // key ends in “URL”
+  //     return [
+  //       key,
+  //       {
+  //         loading,
+  //         active,
+  //         val: url,
+  //         file,
+  //         ref,
+  //         setLoading,
+  //         setActive,
+  //         setURL,
+  //         setFile,
+  //       },
+  //     ];
+  //   }),
+  // );
+
+  // if (debug) {
+  //   console.debug({ fields, endpoints, dirtyFields });
+  // }
 
   const resetData = useCallback(() => {
-    Object.entries(fields).forEach(([key, value]) => {
-      if (!key.startsWith('_')) {
-        setValue(key, value ?? undefined);
-      }
-    });
-  }, [setValue]); // eslint-disable-line react-hooks/exhaustive-deps
+    reset(getDefaultFormValues(player));
+    // Object.entries(fields).forEach(([key, value]) => {
+    //   if (!key.startsWith('_')) {
+    //     setValue(key, value ?? undefined);
+    //   }
+    // });
+    setPickedFiles({});
+  }, [player, reset]);
 
   useEffect(resetData, [resetData]);
 
@@ -184,10 +177,6 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
 
   const onSubmit = async (inputs: EditProfileFields) => {
     try {
-      if (debug) {
-        console.debug(`For ETH Address: ${address}`);
-      }
-
       setStatus(
         <Text>
           Uploading images to
@@ -202,19 +191,15 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
       const files: Record<string, File> = {};
       const images: Record<string, Maybe<ImageSources>> = {};
       const values = { ...inputs };
-      Object.keys(Images).forEach((hasuraId) => {
-        const key = hasuraId as keyof typeof Images;
-        if (endpoints[key].file) {
-          files[key] = endpoints[key].file as File;
-        } else if (!endpoints[key].val) {
-          images[key] = null;
-        }
-        delete values[key];
-      });
-
-      if (debug) {
-        console.debug({ inputs, values, files, endpoints });
-      }
+      // Object.keys(Images).forEach((hasuraId) => {
+      //   const key = hasuraId as keyof typeof Images;
+      //   if (endpoints[key].file) {
+      //     files[key] = endpoints[key].file as File;
+      //   } else if (!endpoints[key].val) {
+      //     images[key] = null;
+      //   }
+      //   delete values[key];
+      // });
 
       const toType = (key: string) => {
         const match = key.match(/^(.+?)(Image)?(URL)$/i);
@@ -241,62 +226,62 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
           );
         }
 
-        Object.keys(files).forEach((key: string) => {
-          const tKey = toType(key);
-          if (!response[tKey]) {
-            toast({
-              title: 'Error Saving Image',
-              description: `Uploaded "${tKey}" & didn't get a response back.`,
-              status: 'warning',
-              isClosable: true,
-              duration: 8000,
-            });
-          } else {
-            const { val, ref } = endpoints[key];
-            let [, mime] = val?.match(/^data:([^;]+);/) ?? [];
-            mime ??= 'image/*';
+        // Object.keys(files).forEach((key: string) => {
+        //   const tKey = toType(key);
+        //   if (!response[tKey]) {
+        //     toast({
+        //       title: 'Error Saving Image',
+        //       description: `Uploaded "${tKey}" & didn't get a response back.`,
+        //       status: 'warning',
+        //       isClosable: true,
+        //       duration: 8000,
+        //     });
+        //   } else {
+        //     const { val, ref } = endpoints[key];
+        //     let [, mime] = val?.match(/^data:([^;]+);/) ?? [];
+        //     mime ??= 'image/*';
 
-            const elem = ref.current as HTMLImageElement | null;
-            const props: { width?: number; height?: number } = {};
-            ['width', 'height'].forEach((prop) => {
-              props[prop as 'width' | 'height'] = Math.max(
-                elem?.[
-                  `natural${prop[0].toUpperCase()}${prop.slice(1)}` as
-                    | 'naturalWidth'
-                    | 'naturalHeight'
-                ] ?? 0,
-                elem?.[prop as 'width' | 'height'] ?? 0,
-                1,
-              );
-            });
-            images[key as keyof typeof Images] = {
-              original: {
-                src: `ipfs://${response[tKey]}`,
-                mimeType: mime,
-                ...props,
-              },
-            } as ImageSources;
-          }
-        });
+        //     const elem = ref.current as HTMLImageElement | null;
+        //     const props: { width?: number; height?: number } = {};
+        //     ['width', 'height'].forEach((prop) => {
+        //       props[prop as 'width' | 'height'] = Math.max(
+        //         elem?.[
+        //           `natural${prop[0].toUpperCase()}${prop.slice(1)}` as
+        //             | 'naturalWidth'
+        //             | 'naturalHeight'
+        //         ] ?? 0,
+        //         elem?.[prop as 'width' | 'height'] ?? 0,
+        //         1,
+        //       );
+        //     });
+        //     images[key as keyof typeof Images] = {
+        //       original: {
+        //         src: `ipfs://${response[tKey]}`,
+        //         mimeType: mime,
+        //         ...props,
+        //       },
+        //     } as ImageSources;
+        //   }
+        // });
       }
 
       if (debug) {
         console.debug({ files, values, inputs, dirtyFields });
       }
 
-      Object.keys(values).forEach((hasuraId) => {
-        const key = hasuraId as keyof HasuraProfileProps;
-        if (!dirtyFields[key]) {
-          if (debug) {
-            let display = values[key];
-            if (typeof display === 'string' && display.length > 20) {
-              display = `${display.slice(0, 20)}…`;
-            }
-            console.info(`Removing Unchanged Value [${key}]: “${display}”`);
-          }
-          delete values[key];
-        }
-      });
+      // Object.keys(values).forEach((hasuraId) => {
+      //   const key = hasuraId as keyof HasuraProfileProps;
+      //   if (!dirtyFields[key]) {
+      //     if (debug) {
+      //       let display = values[key];
+      //       if (typeof display === 'string' && display.length > 20) {
+      //         display = `${display.slice(0, 20)}…`;
+      //       }
+      //       console.info(`Removing Unchanged Value [${key}]: “${display}”`);
+      //     }
+      //     delete values[key];
+      //   }
+      // });
 
       // await saveToCeramic({ values, images });
       await saveToCeramic({ mutationQuery: '', values });
@@ -359,10 +344,20 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
               gap={6}
             >
               <GridItem flex={1} alignItems="center" h="10em">
-                <EditAvatarImage initialURL={fields.profileImageURL} />
+                <EditAvatarImage
+                  initialURL={getValues('profileImageURL')}
+                  onFilePicked={(file) =>
+                    setPickedFiles({ ...pickedFiles, profileImageURL: file })
+                  }
+                />
               </GridItem>
               <GridItem flex={1} alignItems="center" h="10em">
-                <EditBackgroundImage initialURL={fields.backgroundImageURL} />
+                <EditBackgroundImage
+                  initialURL={getValues('profileBackgroundURL')}
+                  onFilePicked={(file) =>
+                    setPickedFiles({ ...pickedFiles, backgroundImageURL: file })
+                  }
+                />
               </GridItem>
               <GridItem flex={1}>
                 <EditDescription />
@@ -448,12 +443,13 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                     defaultValue={
                       Intl.DateTimeFormat().resolvedOptions().timeZone
                     }
-                    render={({ field: { onChange, ref, ...props } }) => (
+                    render={({ field: { onChange, value, ref, ...props } }) => (
                       <SelectTimeZone
                         labelStyle="abbrev"
                         onChange={(tz: ITimezoneOption) => {
                           onChange(tz.value);
                         }}
+                        value={value ?? undefined}
                         {...props}
                       />
                     )}

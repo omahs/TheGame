@@ -20,6 +20,13 @@ type Mutation {
 
 
 type Mutation {
+  linkCeramicProfileNode (
+    nodeId: String!
+  ): LinkCeramicProfileNodeResponse
+}
+
+
+type Mutation {
   saveGuildInformation (
     guildInformation: GuildInfoInput!
   ): SaveGuildResponse
@@ -178,5 +185,9 @@ type SaveGuildResponse {
 type SaveGuildLayoutResponse {
   success : Boolean
   error : String
+}
+
+type LinkCeramicProfileNodeResponse {
+  verified : Boolean
 }
 

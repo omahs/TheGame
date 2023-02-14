@@ -188,6 +188,6 @@ type SaveGuildLayoutResponse {
 }
 
 type LinkCeramicProfileNodeResponse {
-  verified : Boolean
+  verified : Boolean!
 }
 

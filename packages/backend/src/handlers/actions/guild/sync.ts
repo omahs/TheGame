@@ -176,10 +176,10 @@ const syncGuildMembers = async (guild: GuildFragment) => {
 
       let logStr = '';
 
-      if (numInserted != null && numInserted > 0) {
+      if (numInserted > 0) {
         logStr = `Added ${numInserted} players`;
       }
-      if (numDeleted != null && numDeleted > 0) {
+      if (numDeleted > 0) {
         logStr += `${
           logStr.length > 0 ? ' and removed' : 'Removed'
         } ${numDeleted} players`;

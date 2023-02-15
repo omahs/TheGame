@@ -10,11 +10,16 @@ import {
 } from 'components/Player/Section/config';
 import { HeadComponent } from 'components/Seo';
 import { CONFIG } from 'config';
+import { ComposeDBContextProvider } from 'contexts/ComposeDBContext';
+import {
+  PlayerHydrationContextProvider,
+  usePlayerHydrationContext,
+} from 'contexts/PlayerHydrationContext';
 import {
   Player,
   useUpdatePlayerProfileLayoutMutation as useUpdateLayout,
 } from 'graphql/autogen/types';
-import { queryPlayerProfile } from 'graphql/composeDB/queries/profile';
+import { buildPlayerProfileQuery } from 'graphql/composeDB/queries/profile';
 import { getPlayer } from 'graphql/getPlayer';
 import { getTopPlayerUsernames } from 'graphql/getPlayers';
 import { ComposeDBProfileQueryResult } from 'graphql/types';
@@ -45,6 +50,26 @@ export const PlayerPage: React.FC<Props> = ({ player }): ReactElement => {
   // hasura to composeDB. Also use this bannerImageURL for backgroundImageURL
   // if it exists
 
+  if (router.isFallback) {
+    return <LoadingState />;
+  }
+
+  if (!player) return <Page404 />;
+
+  return (
+    <ComposeDBContextProvider>
+      <PlayerHydrationContextProvider player={player}>
+        <PlayerPageContent />
+      </PlayerHydrationContextProvider>
+    </ComposeDBContextProvider>
+  );
+};
+
+export default PlayerPage;
+
+const PlayerPageContent: React.FC = () => {
+  const { hydratedPlayer: player } = usePlayerHydrationContext();
+
   const { value: bannerURL } = useProfileField({
     field: 'bannerImageURL',
     player,
@@ -55,12 +80,6 @@ export const PlayerPage: React.FC<Props> = ({ player }): ReactElement => {
     player,
     getter: getPlayerBackgroundFull,
   });
-
-  if (router.isFallback) {
-    return <LoadingState />;
-  }
-
-  if (!player) return <Page404 />;
 
   const banner = background ? '' : bannerURL;
 
@@ -84,7 +103,7 @@ export const PlayerPage: React.FC<Props> = ({ player }): ReactElement => {
         url={getPlayerURL(player, { rel: false })}
         img={getPlayerImage(player)}
       />
-      {banner && (
+      {banner != null ? (
         <Box
           bg={`url('${banner}') no-repeat`}
           bgSize="cover"
@@ -94,8 +113,7 @@ export const PlayerPage: React.FC<Props> = ({ player }): ReactElement => {
           w="full"
           top={0}
         />
-      )}
-
+      ) : null}
       <Flex
         w="full"
         h="min-content"
@@ -117,8 +135,6 @@ export const PlayerPage: React.FC<Props> = ({ player }): ReactElement => {
     </PageContainer>
   );
 };
-
-export default PlayerPage;
 
 export const Grid: React.FC<Props> = ({ player }): ReactElement => {
   const { user, fetching } = useUser();
@@ -211,7 +227,7 @@ export const getStaticProps = async (
       ceramic: CONFIG.ceramicURL,
       definition: composeDBDefinition,
     });
-    const query = queryPlayerProfile(player.ceramicProfileId);
+    const query = buildPlayerProfileQuery(player.ceramicProfileId);
     const response = await composeDBClient.executeQuery(query);
     if (response.data != null) {
       const composeDBProfileData = (

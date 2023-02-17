@@ -1633,7 +1633,7 @@
     near-api-js "^0.44.2"
     uint8arrays "^3.0.0"
 
-"@ceramicnetwork/common@^2.0.0", "@ceramicnetwork/common@^2.10.0", "@ceramicnetwork/common@^2.18.0", "@ceramicnetwork/common@^2.8.0":
+"@ceramicnetwork/common@2.18.0", "@ceramicnetwork/common@^2.0.0", "@ceramicnetwork/common@^2.10.0", "@ceramicnetwork/common@^2.18.0", "@ceramicnetwork/common@^2.8.0":
   version "2.18.0"
   resolved "https://registry.yarnpkg.com/@ceramicnetwork/common/-/common-2.18.0.tgz#65c15fe72eb207ec2a31137e67e86d9fd7e069fc"
   integrity sha512-z716JnPjDzGy9P2p++XsF3ApbLRmeZX4notAaYH9MW2PAqcaQeGBistxgLV/JZaOOGc9MDDiTGeCJ8CL/PiB0w==
